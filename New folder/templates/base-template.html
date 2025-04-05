@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Twitter Clone{% endblock %}</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f5f8fa;
+        }
+        .navbar {
+            background-color: #1DA1F2;
+        }
+        .tweet-card {
+            border-radius: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #eaeaea;
+        }
+        .profile-image {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+        }
+        .btn-tweet {
+            background-color: #1DA1F2;
+            color: white;
+            border-radius: 30px;
+        }
+        .like-btn {
+            cursor: pointer;
+            color: #657786;
+        }
+        .like-btn.liked {
+            color: #E0245E;
+        }
+        .sidebar {
+            position: sticky;
+            top: 20px;
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'home' %}">Twitter Clone</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'home' %}">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'explore' %}">Explore</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav ms-auto">
+                    {% if user.is_authenticated %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'profile' username=user.username %}">Profile</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'logout' %}">Logout</a>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'login' %}">Login</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'register' %}">Register</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3">
+                <div class="sidebar">
+                    {% block sidebar %}
+                        <div class="card mb-4">
+                            <div class="card-header">Trends for you</div>
+                            <div class="card-body" id="trending-container">
+                                <div class="text-center">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endblock %}
+                </div>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="col-md-6">
+                {% block content %}{% endblock %}
+            </div>
+            
+            <!-- Right Sidebar -->
+            <div class="col-md-3">
+                {% block right_sidebar %}
+                    <div class="card">
+                        <div class="card-header">Who to follow</div>
+                        <div class="card-body">
+                            <p class="text-muted">Suggestions coming soon</p>
+                        </div>
+                    </div>
+                {% endblock %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-light py-4 mt-5">
+        <div class="container text-center">
+            <p class="mb-0">Twitter Clone - Educational Project © {% now "Y" %}</p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Get auth token from cookies (helper function)
+        function getAuthToken() {
+            const name = 'authtoken=';
+            const decodedCookie = decodeURIComponent(document.cookie);
+            const cookieArray = decodedCookie.split(';');
+            for(let i = 0; i < cookieArray.length; i++) {
+                let cookie = cookieArray[i].trim();
+                if (cookie.indexOf(name) === 0) {
+                    return cookie.substring(name.length, cookie.length);
+                }
+            }
+            return '';
+        }
+        
+        // Trending tweets
+        function loadTrending() {
+            fetch('/api/trending/')
+                .then(response => response.json())
+                .then(data => {
+                    const trendingContainer = document.getElementById('trending-container');
+                    trendingContainer.innerHTML = '';
+                    
+                    if (data.length === 0) {
+                        trendingContainer.innerHTML = '<p class="text-muted">No trending topics yet</p>';
+                        return;
+                    }
+                    
+                    data.forEach(tweet => {
+                        const trendDiv = document.createElement('div');
+                        trendDiv.className = 'mb-2';
+                        trendDiv.innerHTML = `
+                            <a href="/tweets/${tweet.id}" class="text-decoration-none">
+                                <small class="text-muted">${tweet.author_username}</small>
+                                <p class="mb-1">${tweet.content.substring(0, 50)}${tweet.content.length > 50 ? '...' : ''}</p>
+                                <small class="text-muted">${tweet.like_count} likes</small>
+                            </a>
+                            <hr>
+                        `;
+                        trendingContainer.appendChild(trendDiv);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading trending:', error);
+                    document.getElementById('trending-container').innerHTML = 
+                        '<p class="text-danger">Failed to load trending tweets</p>';
+                });
+        }
+        
+        // Load trending on page load
+        document.addEventListener('DOMContentLoaded', loadTrending);
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

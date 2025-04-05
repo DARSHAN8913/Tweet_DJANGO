@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ profile_user.username }} | Twitter Clone{% endblock %}
+
+{% block content %}
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex align-items-center">
+                <img src="{{ profile_user.profile_image.url|default:'/static/img/default-profile.png' }}" 
+                     alt="{{ profile_user.username }}" class="profile-image me-3" style="width: 100px; height: 100px;">
+                <div>
+                    <h3 class="mb-1">{{ profile_user.username }}</h3>
+                    {% if profile_user.bio %}
+                        <p>{{ profile_user.bio }}</p>
+                    {% endif %}
+                    <div class="d-flex">
+                        <span class="me-3"><strong>{{ profile_user.follower_count }}</strong> Followers</span>
+                        <span><strong>{{ profile_user.following_count }}</strong> Following</span>
+                    </div>
+                    {% if profile_user.website %}
+                        <div class="mt-1">
+                            <a href="{{ profile_user.website }}" target="_blank" rel="noopener noreferrer">
+                                <i class="bi bi-link-45deg"></i> {{ profile_user.website }}
+                            </a>
+                        </div>
+                    {% endif %}
+                    {% if user.is_authenticated and user != profile_user %}
+                        <button id="follow-btn" class="btn btn-sm {% if is_following %}btn-outline-primary{% else %}btn-primary{% endif %} mt-2" 
+                                data-user-id="{{ profile_user.id }}" data-following="{{ is_following|yesno:'true,false' }}">
+                            {% if is_following %}Unfollow{% else %}Follow{% endif %}
+                        </button>
+                    {% endif %}
+                    {% if user == profile_user %}
+                        <a href="{% url 'edit_profile' %}" class="btn btn-sm btn-outline-secondary mt-2">Edit Profile</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link active" href="#tweets" data-bs-toggle="tab">Tweets</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="#followers" data-bs-toggle="tab">Followers</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="#following" data-bs-toggle="tab">Following</a>
+        </li>
+    </ul>
+    
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="tweets">
+            <div id="user-tweets" class="tweet-container">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="followers">
+            <div id="followers-container">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="following">
+            <div id="following-container">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const userId = {{ profile_user.id }};
+        const username = "{{ profile_user.username }}";
+        const token = getAuthToken();
+        
+        // Load user tweets
+        function loadUserTweets() {
+            fetch(`/api/tweets/?username=${username}`)
+                .then(response => response.json())
+                .then(tweets => {
+                    const container = document.getElementById('user-tweets');
+                    container.innerHTML = '';
+                    
+                    if (tweets.length === 0) {
+                        container.innerHTML = '<p class="text-center text-muted my-5">No tweets yet</p>';
+                        return;
+                    }
+                    
+                    tweets.forEach(tweet => {
+                        const tweetElement = createTweetElement(tweet);
+                        container.appendChild(tweetElement);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading tweets:', error);
+                    document.getElementById('user-tweets').innerHTML = 
+                        '<p class="text-center text-danger my-5">Failed to load tweets</p>';
+                });
+        }
+        
+        // Load followers
+        function loadFollowers() {
+            fetch(`/api/users/${userId}/followers/`)
+                .then(response => response.json())
+                .then(followers => {
+                    const container = document.getElementById('followers-container');
+                    container.innerHTML = '';
+                    
+                    if (followers.length === 0) {
+                        container.innerHTML = '<p class="text-center text-muted my-5">No followers yet</p>';
+                        return;
+                    }
+                    
+                    followers.forEach(follower => {
+                        container.appendChild(createUserElement(follower));
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading followers:', error);
+                    document.getElementById('followers-container').innerHTML = 
+                        '<p class="text-center text-danger my-5">Failed to load followers</p>';
+                });
+        }
+        
+        // Load following
+        function loadFollowing() {
+            fetch(`/api/users/${userId}/following/`)
+                .then(response => response.json())
+                .then(following => {
+                    const container = document.getElementById('following-container');
+                    container.innerHTML = '';
+                    
+                    if (following.length === 0) {
+                        container.innerHTML = '<p class="text-center text-muted my-5">Not following anyone yet</p>';
+                        return;
+                    }
+                    
+                    following.forEach(user => {
+                        container.appendChild(createUserElement(user));
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading following:', error);
+                    document.getElementById('following-container').innerHTML = 
+                        '<p class="text-center text-danger my-5">Failed to load following users</p>';
+                });
+        }
+        
+        // Helper to create user element
+        function createUserElement(user) {
+            const div = document.createElement('div');
+            div.className = 'card mb-2';
+            div.innerHTML = `
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <img src="${user.profile_image || '/static/img/default-profile.png'}" 
+                             alt="${user.username}" class="profile-image me-3" style="width: 50px; height: 50px;">
+                        <div>
+                            <h5 class="mb-1">
+                                <a href="/profile/${user.username}" class="text-decoration-none">
+                                    ${user.username}
+                                </a>
+                            </h5>
+                            <p class="text-muted mb-0">${user.bio || ''}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            return div;
+        }
+        
+        // Follow/unfollow functionality
+        const followBtn = document.getElementById('follow-btn');
+        if (followBtn) {
+            followBtn.addEventListener('click', function() {
+                if (!token) {
+                    alert('You need to be logged in to follow users');
+                    return;
+                }
+                
+                fetch(`/api/users/${userId}/follow/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    const isFollowing = data.action === 'followed';
+                    followBtn.dataset.following = isFollowing ? 'true' : 'false';
+                    followBtn.textContent = isFollowing ? 'Unfollow' : 'Follow';
+                    followBtn.classList.toggle('btn-primary', !isFollowing);
+                    followBtn.classList.toggle('btn-outline-primary', isFollowing);
+                    
+                    // Update follower count without reload
+                    document.querySelector('span:contains("Followers")').innerHTML = 
+                        `<strong>${data.user.follower_count}</strong> Followers`;
+                })
+                .catch(error => {
+                    console.error('Error toggling follow:', error);
+                    alert('Failed to update follow status. Please try again.');
+                });
+            });
+        }
+        
+        // Load initial data
+        loadUserTweets();
+        
+        // Load tab data when clicked
+        document.querySelector('a[href="#followers"]').addEventListener('click', function() {
+            if (!document.getElementById('followers-container').querySelector('.card')) {
+                loadFollowers();
+            }
+        });
+        
+        document.querySelector('a[href="#following"]').addEventListener('click', function() {
+            if (!document.getElementById('following-container').querySelector('.card')) {
+                loadFollowing();
+            }
+        });
+    });
+</script>
+{% endblock %}

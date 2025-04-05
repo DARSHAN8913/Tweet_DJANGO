@@ -1,0 +1,303 @@
+{% extends 'base.html' %}
+
+{% block title %}Home | Twitter Clone{% endblock %}
+
+{% block content %}
+    {% if user.is_authenticated %}
+        <div class="card mb-4">
+            <div class="card-body">
+                <form id="tweet-form">
+                    <div class="mb-3">
+                        <textarea class="form-control" id="tweet-content" rows="3" placeholder="What's happening?" maxlength="280" required></textarea>
+                        <div class="d-flex justify-content-between mt-2">
+                            <small id="char-count">280 characters remaining</small>
+                            <button type="submit" class="btn btn-tweet">Tweet</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    {% endif %}
+    
+    <div id="feed-container">
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading tweets...</p>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Character counter for tweet input
+        const tweetContent = document.getElementById('tweet-content');
+        const charCount = document.getElementById('char-count');
+        
+        if (tweetContent) {
+            tweetContent.addEventListener('input', function() {
+                const remaining = 280 - this.value.length;
+                charCount.textContent = `${remaining} characters remaining`;
+                
+                // Change color when approaching limit
+                if (remaining < 20) {
+                    charCount.classList.add('text-danger');
+                } else {
+                    charCount.classList.remove('text-danger');
+                }
+            });
+        }
+        
+        // Tweet form submission
+        const tweetForm = document.getElementById('tweet-form');
+        if (tweetForm) {
+            tweetForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const content = tweetContent.value.trim();
+                if (!content) return;
+                
+                const token = getAuthToken();
+                if (!token) {
+                    alert('You need to be logged in to tweet');
+                    return;
+                }
+                
+                // Submit tweet via API
+                fetch('/api/tweets/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Token ${token}`
+                    },
+                    body: JSON.stringify({ content })
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to create tweet');
+                    return response.json();
+                })
+                .then(data => {
+                    // Clear form
+                    tweetContent.value = '';
+                    charCount.textContent = '280 characters remaining';
+                    
+                    // Reload feed
+                    loadFeed();
+                })
+                .catch(error => {
+                    console.error('Error creating tweet:', error);
+                    alert('Failed to post tweet. Please try again.');
+                });
+            });
+        }
+        
+        // Load feed function
+        function loadFeed() {
+            const feedContainer = document.getElementById('feed-container');
+            const endpoint = '{% if user.is_authenticated %}/api/feed/{% else %}/api/tweets/{% endif %}';
+            
+            const token = getAuthToken();
+            const headers = token ? { 'Authorization': `Token ${token}` } : {};
+            
+            fetch(endpoint, { headers })
+                .then(response => response.json())
+                .then(tweets => {
+                    feedContainer.innerHTML = '';
+                    
+                    if (tweets.length === 0) {
+                        feedContainer.innerHTML = `
+                            <div class="text-center py-5">
+                                <p class="text-muted">No tweets to display. 
+                                {% if user.is_authenticated %}
+                                    Be the first to tweet!
+                                {% else %}
+                                    Sign in to see personalized tweets.
+                                {% endif %}
+                                </p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    tweets.forEach(tweet => {
+                        const tweetEl = createTweetElement(tweet);
+                        feedContainer.appendChild(tweetEl);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading feed:', error);
+                    feedContainer.innerHTML = `
+                        <div class="text-center py-5">
+                            <p class="text-danger">Failed to load tweets. Please refresh the page.</p>
+                        </div>
+                    `;
+                });
+        }
+        
+        // Create tweet element helper
+        function createTweetElement(tweet) {
+            const tweetDiv = document.createElement('div');
+            tweetDiv.className = 'card tweet-card mb-3';
+            
+            // Format date
+            const createdDate = new Date(tweet.created_at);
+            const formattedDate = createdDate.toLocaleDateString() + ' ' + createdDate.toLocaleTimeString();
+            
+            // Create content
+            tweetDiv.innerHTML = `
+                <div class="card-body">
+                    <div class="d-flex">
+                        <img src="${tweet.author_profile_image || '/static/img/default-profile.png'}" 
+                             alt="${tweet.author_username}" class="profile-image me-3">
+                        <div class="flex-grow-1">
+                            <h5 class="card-title mb-1">
+                                <a href="/profile/${tweet.author_username}" class="text-decoration-none">
+                                    ${tweet.author_username}
+                                </a>
+                            </h5>
+                            <p class="card-text">${tweet.content}</p>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">${formattedDate}</small>
+                                <div>
+                                    <span class="like-btn ${tweet.is_liked ? 'liked' : ''}" 
+                                          data-tweet-id="${tweet.id}" 
+                                          data-liked="${tweet.is_liked}">
+                                        <i class="bi ${tweet.is_liked ? 'bi-heart-fill' : 'bi-heart'}"></i>
+                                        <span class="like-count">${tweet.like_count}</span>
+                                    </span>
+                                    <span class="ms-3">
+                                        <i class="bi bi-chat"></i>
+                                        ${tweet.comments.length}
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <!-- Comments section -->
+                            <div class="mt-3 comments-section">
+                                ${tweet.comments.length > 0 ? 
+                                    `<hr>
+                                     <h6 class="card-subtitle mb-2 text-muted">Comments</h6>
+                                     ${tweet.comments.map(comment => `
+                                         <div class="d-flex mt-2">
+                                             <img src="${comment.author_profile_image || '/static/img/default-profile.png'}" 
+                                                  alt="${comment.author_username}" class="profile-image me-2" style="width: 30px; height: 30px;">
+                                             <div>
+                                                 <small class="fw-bold">${comment.author_username}</small>
+                                                 <p class="mb-1">${comment.content}</p>
+                                                 <small class="text-muted">${new Date(comment.created_at).toLocaleDateString()}</small>
+                                             </div>
+                                         </div>
+                                     `).join('')}` 
+                                    : ''}
+                                
+                                <!-- Comment form if authenticated -->
+                                {% if user.is_authenticated %}
+                                <form class="comment-form mt-3" data-tweet-id="${tweet.id}">
+                                    <div class="input-group">
+                                        <input type="text" class="form-control form-control-sm" 
+                                               placeholder="Add a comment..." required>
+                                        <button class="btn btn-sm btn-outline-primary" type="submit">Post</button>
+                                    </div>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            return tweetDiv;
+        }
+        
+        // Initial feed load
+        loadFeed();
+        
+        // Periodically refresh feed every 15 seconds (as mentioned in the document)
+        setInterval(loadFeed, 15000);
+        
+        // Event delegation for dynamically added like buttons and comment forms
+        document.body.addEventListener('click', function(e) {
+            // Like button handler
+            if (e.target.closest('.like-btn')) {
+                const likeBtn = e.target.closest('.like-btn');
+                const tweetId = likeBtn.dataset.tweetId;
+                const token = getAuthToken();
+                
+                if (!token) {
+                    alert('You need to be logged in to like tweets');
+                    return;
+                }
+                
+                fetch(`/api/tweets/${tweetId}/like/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Token ${token}`
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    const isLiked = data.status === 'liked';
+                    likeBtn.dataset.liked = isLiked;
+                    likeBtn.classList.toggle('liked', isLiked);
+                    
+                    const icon = likeBtn.querySelector('i');
+                    icon.className = isLiked ? 'bi bi-heart-fill' : 'bi bi-heart';
+                    
+                    // Update like count
+                    const likeCount = likeBtn.querySelector('.like-count');
+                    likeCount.textContent = parseInt(likeCount.textContent) + (isLiked ? 1 : -1);
+                })
+                .catch(error => {
+                    console.error('Error toggling like:', error);
+                });
+            }
+        });
+        
+        // Event delegation for comment forms
+        document.body.addEventListener('submit', function(e) {
+            if (e.target.classList.contains('comment-form')) {
+                e.preventDefault();
+                
+                const form = e.target;
+                const tweetId = form.dataset.tweetId;
+                const input = form.querySelector('input');
+                const content = input.value.trim();
+                
+                if (!content) return;
+                
+                const token = getAuthToken();
+                if (!token) {
+                    alert('You need to be logged in to comment');
+                    return;
+                }
+                
+                fetch(`/api/tweets/${tweetId}/add_comment/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Token ${token}`
+                    },
+                    body: JSON.stringify({ content })
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to add comment');
+                    return response.json();
+                })
+                .then(data => {
+                    // Clear input
+                    input.value = '';
+                    
+                    // Reload feed to show new comment
+                    loadFeed();
+                })
+                .catch(error => {
+                    console.error('Error posting comment:', error);
+                    alert('Failed to post comment. Please try again.');
+                });
+            }
+        });
+    });
+</script>
+{% endblock %}
